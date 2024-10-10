@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"go_sqlite_demo/db"
+	"go_sqlite_demo/helper"
 	"go_sqlite_demo/models"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 )
 
 
@@ -29,19 +31,30 @@ func main() {
 	defer conn.Close()
 
 	// Step 3: Create a new Message instance
-	testMessage := models.Message{
-		Severity:        123,
-		DescriptionText: "blablabla",
-		ReceivedDateTime: time.Now(),
+	testMessages := helper.CreateTestData()
+
+	for id := range testMessages {
+		dbId, _ := db.InsertMessage(conn, testMessages[id], &params)
+		fmt.Printf("Message inserted with ID: %d\n", dbId)
 	}
 
-	// Step 4: Insert the message using InsertMessage
-	insertedID, err := db.InsertMessage(conn, testMessage, &params)
-	if err != nil {
-		fmt.Println("Error inserting message:", err)
-		return
-	}
+	ch :=make(chan models.Message)
+	go db.GetRowsAndPutInChannel(conn, ch)
 
-	// Step 5: Print the inserted message ID
-	fmt.Printf("Message inserted with ID: %d\n", insertedID)
+	go ProcessMessages(ch)
+
+
+	
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	<-c
+	fmt.Println("\nServer is shutting down...")
+	db.ResetDB(conn, &params)
+
+}
+
+func ProcessMessages(ch <-chan models.Message) {
+    for message := range ch {
+        fmt.Println("Processing message:", message)
+    }
 }

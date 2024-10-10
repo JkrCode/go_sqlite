@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func createTestData() []models.Message {
+func CreateTestData() []models.Message {
 	return []models.Message{
 		{Severity: 123,
 			DescriptionText:  "blablabla",
@@ -23,19 +23,19 @@ func createTestData() []models.Message {
 			DescriptionText:  "",
 			ReceivedDateTime: time.Now()},
 		{Severity: 123,
-			DescriptionText:  "blablabla",
+			DescriptionText:  "blablabla2",
 			ReceivedDateTime: time.Now()},
 		{Severity: 12,
-			DescriptionText:  "this is ab very long text, i dont really know ",
+			DescriptionText:  "this is ab very long text, i dont really know 2",
 			ReceivedDateTime: time.Now()},
 		{Severity: 8382,
-			DescriptionText:  "short text",
+			DescriptionText:  "short text2",
 			ReceivedDateTime: time.Now()},
 		{Severity: 1,
-			DescriptionText:  "hack hackers etc",
+			DescriptionText:  "hack hackers etc2",
 			ReceivedDateTime: time.Now()},
 		{Severity: 4,
-			DescriptionText:  "",
+			DescriptionText:  "2",
 			ReceivedDateTime: time.Now()},
 	}
 }

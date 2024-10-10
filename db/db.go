@@ -6,6 +6,7 @@ import (
 	"go_sqlite_demo/models"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -42,7 +43,7 @@ stmt, err := prepareQuery(db, "insert_message.sql", params)
     }
     defer stmt.Close()
 
-    result, err := stmt.Exec(message.Severity , message.DescriptionText, message.ReceivedDateTime.Format("2006.01.02 15.04.05)"))
+    result, err := stmt.Exec(message.Severity , message.DescriptionText, message.ReceivedDateTime.Format("2006.01.02 15.04.05"))
     if err != nil {
         return 0, err
     }
@@ -66,3 +67,55 @@ func prepareQuery(db *sql.DB, filename string, params *models.EnvironmentParams)
     return stmt, nil
 }
 
+func ResetDB(db *sql.DB, params *models.EnvironmentParams)(int64, error){
+	stmt, err := prepareQuery(db, "drop_table.sql", params)
+    if err != nil {
+		fmt.Println(err)
+        return 0, err
+    }
+    defer stmt.Close()
+	result, err := stmt.Exec()
+	if err != nil {
+		fmt.Println(err)
+		return 0, err
+	}
+	rowsaffected, err :=result.RowsAffected()
+	if err != nil {
+		fmt.Println(err)
+		return 0, err
+	}
+
+	fmt.Println("rows affected: ", rowsaffected)
+    return rowsaffected, nil
+}
+func GetRowsAndPutInChannel(conn *sql.DB, ch chan<- models.Message){
+	defer close(ch)
+	rowPointer, err := conn.Query("SELECT severity, descriptionText, receivedDateTime FROM messages")
+	if err != nil {
+		fmt.Println("error getting rows from db:", err)
+		return
+	}
+
+	defer rowPointer.Close()
+	
+	for rowPointer.Next() {
+		var message models.Message
+		var receivedDateTime string
+
+		err := rowPointer.Scan(&message.Severity, &message.DescriptionText, &receivedDateTime)
+		if err != nil {
+			fmt.Println("error scanning row: ", err)
+			return
+		}
+
+		message.ReceivedDateTime, err = time.Parse("2006.01.02 15.04.05", receivedDateTime)
+		if err != nil {
+			fmt.Println("error parsing date from db row: ", err)
+			return
+		}
+		ch <- message
+	}
+	if err := rowPointer.Err(); err != nil {
+        fmt.Println("error iterating over rows:", err)
+    }
+}
