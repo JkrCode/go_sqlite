@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
 	"fmt"
@@ -94,7 +95,7 @@ func ResetDB(db *sql.DB) (int64, error) {
 	fmt.Println("Rows affected:", rowsAffected)
 	return rowsAffected, nil
 }
-func GetRowsAndPutInChannel(conn *sql.DB, ch chan<- models.Message) {
+func GetRowsAndPutInChannel(ctx context.Context, conn *sql.DB, ch chan<- models.Message) {
 	// Query the messages table for the necessary fields.
 	rowPointer, err := conn.Query(getMessage)
 	if err != nil {
@@ -111,7 +112,7 @@ func GetRowsAndPutInChannel(conn *sql.DB, ch chan<- models.Message) {
 		err := rowPointer.Scan(&message.Severity, &message.DescriptionText, &receivedDateTime)
 		if err != nil {
 			fmt.Println("Error scanning row:", err)
-			return
+			continue
 		}
 
 		message.ReceivedDateTime, err = time.Parse("2006.01.02 15.04.05", receivedDateTime)
@@ -120,7 +121,11 @@ func GetRowsAndPutInChannel(conn *sql.DB, ch chan<- models.Message) {
 			return
 		}
 
-		ch <- message
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- message:
+		}
 	}
 
 	// Check if any error occurred during row iteration.

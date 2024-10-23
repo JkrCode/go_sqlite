@@ -14,7 +14,7 @@ import (
 
 func main() {
 	//incorporate context
-	_, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	fmt.Println("Initializing the database...")
@@ -42,18 +42,18 @@ func main() {
 	go func() {
 		defer wg.Done()
 		defer close(ch1)
-		db.GetRowsAndPutInChannel(conn, ch1)
+		db.GetRowsAndPutInChannel(ctx, conn, ch1)
 	}()
 
 	go func() {
 		defer wg.Done()
 		defer close(ch2)
-		pipeline1(ch1, ch2)
+		pipeline1(ctx, ch1, ch2)
 	}()
 
 	go func() {
 		defer wg.Done()
-		pipeline2(ch2)
+		pipeline2(ctx, ch2)
 	}()
 
 	c := make(chan os.Signal, 1)
@@ -64,16 +64,38 @@ func main() {
 
 }
 
-func pipeline1(ch <-chan models.Message, ch2 chan models.Message) {
-	for message := range ch {
-		fmt.Println("Processing message:", message)
-		ch2 <- message
-	}
+func pipeline1(ctx context.Context, in <-chan models.Message, out chan<- models.Message) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-in:
+			if !ok {
+				return
+			}
 
+			fmt.Println("Pipeline 1 processing message:", msg)
+
+			select {
+			case <-ctx.Done():
+				return
+			case out <- msg:
+				// Message forwarded successfully
+			}
+		}
+	}
 }
 
-func pipeline2(ch2 <-chan models.Message) {
-	for message := range ch2 {
-		fmt.Println("Processing message:", message)
+func pipeline2(ctx context.Context, in <-chan models.Message) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-in:
+			if !ok {
+				return
+			}
+			fmt.Println("Pipeline 2 processing message:", msg)
+		}
 	}
 }
