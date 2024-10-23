@@ -1,0 +1,1 @@
+SELECT severity, descriptionText, receivedDateTime FROM messages
