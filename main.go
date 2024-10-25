@@ -2,66 +2,96 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"go_sqlite_demo/db"
 	"go_sqlite_demo/helper"
 	"go_sqlite_demo/models"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
+	"time"
 )
 
 func main() {
-	//incorporate context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fmt.Println("Initializing the database...")
-	conn, err := db.Run()
-	if err != nil {
-		fmt.Println("error starting db with err: ", err)
-		return
-	}
+	conn := initializeDatabase()
 	defer conn.Close()
 
 	testMessages := helper.CreateTestData()
-
 	for id := range testMessages {
 		dbId, _ := db.InsertMessage(conn, testMessages[id])
 		fmt.Printf("Message inserted with ID: %d\n", dbId)
 	}
-
-	var wg sync.WaitGroup
-
+	// Initialize channels and start pipelines
 	ch1 := make(chan models.Message, 100)
 	ch2 := make(chan models.Message, 100)
 
-	wg.Add(3)
+	startPipelines(ctx, conn, ch1, ch2)
 
+	handleGracefulShutdown(cancel, ch1, ch2)
+
+	fmt.Println("Server is shutting down...")
+	db.ResetDB(conn)
+}
+
+func initializeDatabase() *sql.DB {
+	fmt.Println("Initializing the database...")
+	conn, err := db.Run()
+	if err != nil {
+		fmt.Println("error starting db with err: ", err)
+		os.Exit(1)
+	}
+	return conn
+}
+
+func startPipelines(ctx context.Context, conn *sql.DB, ch1, ch2 chan models.Message) {
 	go func() {
-		defer wg.Done()
 		defer close(ch1)
 		db.GetRowsAndPutInChannel(ctx, conn, ch1)
 	}()
 
 	go func() {
-		defer wg.Done()
 		defer close(ch2)
 		pipeline1(ctx, ch1, ch2)
 	}()
 
 	go func() {
-		defer wg.Done()
 		pipeline2(ctx, ch2)
 	}()
+}
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
-	fmt.Println("\nServer is shutting down...")
-	db.ResetDB(conn)
+func handleGracefulShutdown(cancel context.CancelFunc, ch1, ch2 chan models.Message) {
+	// Wait for interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
 
+	fmt.Println("\nReceived interrupt signal...")
+	cancel() // Signal all pipelines to stop
+
+	// Wait briefly to allow pipelines to finish processing
+	if completed := waitForCompletionWithTimeout(ch1, ch2); completed {
+		fmt.Println("All pipelines completed gracefully")
+	} else {
+		fmt.Println("Shutdown timeout reached, some messages may be unprocessed")
+	}
+}
+
+func waitForCompletionWithTimeout(ch1, ch2 chan models.Message) bool {
+	shutdownTimeout := time.NewTimer(5 * time.Second)
+	defer shutdownTimeout.Stop()
+
+	select {
+	case <-shutdownTimeout.C:
+		return false
+	default:
+		// Allow some time for channels to drain
+		time.Sleep(100 * time.Millisecond)
+		return len(ch1) == 0 && len(ch2) == 0
+	}
 }
 
 func pipeline1(ctx context.Context, in <-chan models.Message, out chan<- models.Message) {
