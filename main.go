@@ -15,7 +15,6 @@ import (
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	conn := initializeDatabase()
 	defer conn.Close()
@@ -26,7 +25,7 @@ func main() {
 		fmt.Printf("Message inserted with ID: %d\n", dbId)
 	}
 
-	// Initialize channels and start pipelines
+	// Initialize channels
 	ch1 := make(chan models.Message, 100)
 	ch2 := make(chan models.Message, 100)
 
@@ -70,15 +69,20 @@ func waitForCompletionWithTimeout(ch1, ch2 chan models.Message) bool {
 	shutdownTimeout := time.NewTimer(5 * time.Second)
 	defer shutdownTimeout.Stop()
 
-	select {
-	case <-shutdownTimeout.C:
-		return false
-	default:
-		// Allow some time for channels to drain
-		time.Sleep(100 * time.Millisecond)
-		return len(ch1) == 0 && len(ch2) == 0
+	for { //for loop allows to check multiple times if channes are empty and waits 100ms each iteration
+		select {
+		case <-shutdownTimeout.C:
+			return false
+		default:
+			// Allow some time for channels to drain
+			if len(ch1) == 0 && len(ch2) == 0 {
+				return true
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 }
+
 
 func pipeline1(ctx context.Context, in <-chan models.Message, out chan<- models.Message) {
 	defer close(out)
