@@ -96,6 +96,8 @@ func ResetDB(db *sql.DB) (int64, error) {
 	return rowsAffected, nil
 }
 func GetRowsAndPutInChannel(ctx context.Context, conn *sql.DB, ch chan<- models.Message) {
+	defer close(ch)
+
 	// Query the messages table for the necessary fields.
 	rowPointer, err := conn.Query(getMessage)
 	if err != nil {

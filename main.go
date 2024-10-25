@@ -25,11 +25,15 @@ func main() {
 		dbId, _ := db.InsertMessage(conn, testMessages[id])
 		fmt.Printf("Message inserted with ID: %d\n", dbId)
 	}
+
 	// Initialize channels and start pipelines
 	ch1 := make(chan models.Message, 100)
 	ch2 := make(chan models.Message, 100)
 
-	startPipelines(ctx, conn, ch1, ch2)
+	//start go routines for initial load and pipelines
+	go db.GetRowsAndPutInChannel(ctx, conn, ch1)
+	go pipeline1(ctx, ch1, ch2)
+	go pipeline2(ctx, ch2)	
 
 	handleGracefulShutdown(cancel, ch1, ch2)
 
@@ -47,24 +51,7 @@ func initializeDatabase() *sql.DB {
 	return conn
 }
 
-func startPipelines(ctx context.Context, conn *sql.DB, ch1, ch2 chan models.Message) {
-	go func() {
-		defer close(ch1)
-		db.GetRowsAndPutInChannel(ctx, conn, ch1)
-	}()
-
-	go func() {
-		defer close(ch2)
-		pipeline1(ctx, ch1, ch2)
-	}()
-
-	go func() {
-		pipeline2(ctx, ch2)
-	}()
-}
-
 func handleGracefulShutdown(cancel context.CancelFunc, ch1, ch2 chan models.Message) {
-	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -72,7 +59,6 @@ func handleGracefulShutdown(cancel context.CancelFunc, ch1, ch2 chan models.Mess
 	fmt.Println("\nReceived interrupt signal...")
 	cancel() // Signal all pipelines to stop
 
-	// Wait briefly to allow pipelines to finish processing
 	if completed := waitForCompletionWithTimeout(ch1, ch2); completed {
 		fmt.Println("All pipelines completed gracefully")
 	} else {
@@ -95,6 +81,8 @@ func waitForCompletionWithTimeout(ch1, ch2 chan models.Message) bool {
 }
 
 func pipeline1(ctx context.Context, in <-chan models.Message, out chan<- models.Message) {
+	defer close(out)
+
 	for {
 		select {
 		case <-ctx.Done():
