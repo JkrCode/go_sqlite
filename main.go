@@ -7,6 +7,7 @@ import (
 	"go_sqlite_demo/db"
 	"go_sqlite_demo/helper"
 	"go_sqlite_demo/models"
+	"go_sqlite_demo/pipeline"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,8 +32,8 @@ func main() {
 
 	//start go routines for initial load and pipelines
 	go db.GetRowsAndPutInChannel(ctx, conn, ch1)
-	go pipeline1(ctx, ch1, ch2)
-	go pipeline2(ctx, ch2)	
+	go pipeline.Pipeline1(ctx, ch1, ch2)
+	go pipeline.Pipeline2(ctx, ch2)
 
 	handleGracefulShutdown(cancel, ch1, ch2)
 
@@ -79,45 +80,6 @@ func waitForCompletionWithTimeout(ch1, ch2 chan models.Message) bool {
 				return true
 			}
 			time.Sleep(100 * time.Millisecond)
-		}
-	}
-}
-
-
-func pipeline1(ctx context.Context, in <-chan models.Message, out chan<- models.Message) {
-	defer close(out)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-in:
-			if !ok {
-				return
-			}
-
-			fmt.Println("Pipeline 1 processing message:", msg)
-
-			select {
-			case <-ctx.Done():
-				return
-			case out <- msg:
-				// Message forwarded successfully
-			}
-		}
-	}
-}
-
-func pipeline2(ctx context.Context, in <-chan models.Message) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-in:
-			if !ok {
-				return
-			}
-			fmt.Println("Pipeline 2 processing message:", msg)
 		}
 	}
 }
