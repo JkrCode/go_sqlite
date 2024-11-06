@@ -35,14 +35,25 @@ func Pipeline1(ctx context.Context, in <-chan models.Message, out chan<- models.
 	}
 }
 
-func loadMatchingLines(s string) {
+func loadMatchingLines(s string) (map[string]struct{}, error) {
 	file, err := os.Open(s)
 	if err != nil {
 		fmt.Printf("error loading file from os: %s", err)
-		return
+		return nil, err
 	}
 	defer file.Close()
+
+	lines := make(map[string]struct{})
 	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		lines[scanner.Text()] = struct{}{}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
 
 }
 
